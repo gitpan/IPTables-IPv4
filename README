@@ -1,0 +1,35 @@
+Quick how-to on building IPTables:
+
+tar zxf IPTables.tar.gz -C <target dir>
+cd <target dir>/IPTables
+perl Makefile.PL
+make
+make install # from here on must be as root!
+make test
+
+
+This code has been used in production scenarios, and has had some beating
+done on it. Please read the embedded POD documentation (perldoc
+IPTables::IPv4) or the included PDF for information on using this module.
+There may be lingering bugs yet, but I have attempted to eliminate as many
+as possible. Please drop me an e-mail if you find one, however. If you do
+find a bug, and do let me know, please provide as much detail as possible -
+script examples, strace output, and other such material can ease the process
+of determining what went wrong.
+
+I am now including a snap of the libiptc code from the netfilter source tree.
+This heavily simplifies the build procedure, eliminating the need to get
+an iptables source tree or a netfilter CVS tree to build against.
+
+I have written match and target modules for all the matches and targets
+which are provided with a stock kernel, as well as some which are, as yet,
+only available via patch-o-matic. If you wish to have more supported, I
+encourage you (following the model put forth in the existing modules) to
+add the necessary support. The modules that are in there are ones that I
+care about supporting, because they're ones that I've needed. I'll try to
+get more in, but without the need for them, it's hard to justify the coding
+time, not to mention not really having the ability to give them the serious
+testing they need.
+
+Derrik Pates
+dpates@dsdk12.net

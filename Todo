@@ -1,0 +1,29 @@
+- Implement the following matches:
+	+ ah
+	  condition
+	+ connmark
+	+ conntrack
+	+ esp
+	+ fuzzy
+	+ helper
+	+ nth
+	+ pool
+	+ quota
+	+ random
+	- realm
+	+ recent
+	- record_rpc
+	+ string
+
+- Implement the following targets:
+	- BALANCE
+	+ CONNMARK
+	+ NETLINK
+	+ NETMAP
+	+ POOL
+	+ ROUTE
+	+ SAME
+
+- Port netfilter testsuite to this framework (probably after some more of
+  the modules are ported). Some of it may not be portable, because of the
+  way the testing is being done. I'll have to investigate further.

@@ -1,0 +1,4 @@
+TYPEMAP
+IPTables::IPv4::Table	T_PTROBJ
+u_int64_t	T_UV
+const char *	T_PV
