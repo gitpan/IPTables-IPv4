@@ -31,13 +31,13 @@ typedef struct {
 } DayList;
 
 DayList days[] = {
-	{ "Sun",	1 << 0 },
-	{ "Mon",	1 << 1 },
-	{ "Tue",	1 << 2 },
+	{ "Sun",	1 << 6 },
+	{ "Mon",	1 << 5 },
+	{ "Tue",	1 << 4 },
 	{ "Wed",	1 << 3 },
-	{ "Thu",	1 << 4 },
-	{ "Fri",	1 << 5 },
-	{ "Sat",	1 << 6 }
+	{ "Thu",	1 << 2 },
+	{ "Fri",	1 << 1 },
+	{ "Sat",	1 << 0 }
 };
 
 static void setup(void *myinfo, unsigned int *nfcache) {

@@ -23,7 +23,7 @@ require AutoLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.97';
+$VERSION = '0.97a';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -304,7 +304,9 @@ put in place, or since its counters were last zeroed.
 =item matches
 
 An array reference, containing a list of all the match modules which are to be
-used as part of the rule.
+used as part of the rule. Any match qualifier other than a protocol match
+module - i.e., C<tos>, C<mport>, C<state>, etc., must be specified with this
+option, or any fields that belong to them will not be honored.
 
 =item [target]-target-raw
 
