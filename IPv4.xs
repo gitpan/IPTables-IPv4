@@ -29,6 +29,7 @@
 #include <errno.h>
 #include "packer.h"
 #include "unpacker.h"
+#include "loader.h"
 #include "maskgen.h"
 #include "module_iface.h"
 
@@ -53,6 +54,7 @@ init(tablename)
 		else {
 			RETVAL = malloc(sizeof(iptc_handle_t));
 			*RETVAL = handle;
+			ipt_loader_setup();
 		}
 	OUTPUT:
 	RETVAL
@@ -74,13 +76,18 @@ list_chains(self)
 	PREINIT:
 	char *			chain;
 	SV *			sv;
+	int				count = 0;
 	PPCODE:
 		sv = ST(0);
 		chain = (char *)iptc_first_chain(self);
 		while(chain) {
-			XPUSHs(sv_2mortal(newSVpv(chain, 0)));
+			count++;
+			if (GIMME_V == G_ARRAY)
+				XPUSHs(sv_2mortal(newSVpv(chain, 0)));
 			chain = (char *)iptc_next_chain(self);
 		}
+		if (GIMME_V == G_SCALAR)
+			XPUSHs(sv_2mortal(newSViv(count)));
 
 void
 list_rules(self, chain)
@@ -88,16 +95,21 @@ list_rules(self, chain)
 	ipt_chainlabel			chain
 	PREINIT:
 	SV *					sv;
+	int				count = 0;
 	PPCODE:
 		sv = ST(0);
 		if(iptc_is_chain(chain, *self)) {
 			struct ipt_entry *entry =
 			    (struct ipt_entry *)iptc_first_rule(chain, self);
 			while(entry) {
-				XPUSHs(sv_2mortal(newRV_inc((SV*)ipt_do_unpack(entry, self))));
+				count++;
+				if (GIMME_V == G_ARRAY)
+					XPUSHs(sv_2mortal(newRV_noinc((SV*)ipt_do_unpack(entry, self))));
 				entry = (struct ipt_entry *)iptc_next_rule(entry, self);
 			}
 		}
+		if (GIMME_V == G_SCALAR)
+			XPUSHs(sv_2mortal(newSViv(count)));
 
 int
 builtin(self, chain)
@@ -392,9 +404,11 @@ void
 DESTROY(self)
 	IPTables::IPv4::Table	&self
 	CODE:
-		if(self && *self) {
-			if(!iptc_commit(self))
-				fprintf(stderr, "Commit failed: %s\n", iptc_strerror(errno));
+		if(self) {
+			if(*self)
+				iptc_free(self);
+			free(self);
 		}
+		ipt_release_modules();
 		/* vim: ts=4
 		 */

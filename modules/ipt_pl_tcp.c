@@ -1,3 +1,7 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_tcp
+#define MODULE_NAME "tcp"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -6,20 +10,6 @@
 #include <stdio.h>
 #include <netinet/in.h>
 #include <limits.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_tcp
-#define MODULE_NAME "tcp"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 typedef struct {
 	char *name;
@@ -260,7 +250,7 @@ static SV *build_flag_list_from_mask(u_int8_t mask, FlagList *flags,
 		if(flags[i].value & mask)
 			av_push(av, newSVpv(flags[i].name, 0));
 	}
-	return((SV *)newRV((SV *)av));
+	return((SV *)newRV_noinc((SV *)av));
 }
 
 static SV *build_sv_from_portrange(u_int16_t *ports, bool inv) {
@@ -321,7 +311,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 											sizeof(FlagList)) - 2), 0);
 		if(info->invflags & IPT_TCP_INV_FLAGS)
 			hv_store(hv, "inv", 3, newSViv(1), 0);
-		hv_store(ent_hash, "tcp-flags", 9, newRV((SV *)hv), 0);
+		hv_store(ent_hash, "tcp-flags", 9, newRV_noinc((SV *)hv), 0);
 	}
 	if(info->option) {
 		if(info->invflags & IPT_TCP_INV_OPTION) {
@@ -335,20 +325,18 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	}
 }
 
-static ModuleDef tcp_module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	NULL /* final_check */
+static ModuleDef _module = {
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
 };
 
 ModuleDef *init(void) {
-	return(&tcp_module);
+	return(&_module);
 }
 /* vim: ts=4
  */

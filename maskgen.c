@@ -25,8 +25,6 @@
 #include "perl.h"
 #include "XSUB.h"
 
-/* for struct ipt_entry and co. */
-#include <libiptc/libiptc.h>
 #include <stdio.h>
 
 #include "maskgen.h"
@@ -34,10 +32,10 @@
 #include "module_iface.h"
 
 /* Generate the matchmask for iptc_delete_entry(). */
-char *ipt_gen_delmask(struct ipt_entry *entry) {
+unsigned char *ipt_gen_delmask(ENTRY *entry) {
 	unsigned int size;
-	struct ipt_entry_match *match;
-	struct ipt_entry_target *target;
+	ENTRY_MATCH *match;
+	ENTRY_TARGET *target;
 	unsigned char *mask, *mptr;
 	ModuleDef *module;
 
@@ -49,8 +47,8 @@ char *ipt_gen_delmask(struct ipt_entry *entry) {
 
 	/* Mark off the size of a (struct ipt_entry) as data to compare against -
 	 * an entry is never going to be smaller than this. */
-	memset(mask, 0xFF, sizeof(struct ipt_entry));
-	mptr = mask + sizeof(struct ipt_entry);
+	memset(mask, 0xFF, sizeof(ENTRY));
+	mptr = mask + sizeof(ENTRY);
 	
 	/* Go through each of the matches, and ask each available match module
 	 * how much of its data should be compared. */
@@ -58,11 +56,11 @@ char *ipt_gen_delmask(struct ipt_entry *entry) {
 					(void *)match < (void *)entry + entry->target_offset;
 					match = (void *)match + match->u.match_size) {
 		module = ipt_find_module(match->u.user.name, MODULE_MATCH, NULL);
-		size = IPT_ALIGN(sizeof(struct ipt_entry_match));
+		size = ALIGN(sizeof(ENTRY_MATCH));
 		if(module)
 			size += module->size_uspace;
 		else if(match->u.match_size >
-						IPT_ALIGN(sizeof(struct ipt_entry_match)))
+						ALIGN(sizeof(ENTRY_MATCH)))
 			size = match->u.match_size;
 		memset(mptr, 0xFF, size);
 		
@@ -74,11 +72,11 @@ char *ipt_gen_delmask(struct ipt_entry *entry) {
 	if(entry->target_offset < entry->next_offset) {
 		target = (void *)entry + entry->target_offset;
 		module = ipt_find_module(target->u.user.name, MODULE_TARGET, NULL);
-		size = IPT_ALIGN(sizeof(struct ipt_entry_target));
+		size = ALIGN(sizeof(ENTRY_TARGET));
 		if(module)
 			size += module->size_uspace;
 		else if(target->u.target_size >
-						IPT_ALIGN(sizeof(struct ipt_entry_target)))
+						ALIGN(sizeof(ENTRY_TARGET)))
 			size = target->u.target_size;
 		memset(mptr, 0xFF, size);
 	}

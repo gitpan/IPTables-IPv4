@@ -1,22 +1,12 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_tos_info
+#define MODULE_NAME "tos"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <linux/netfilter_ipv4/ipt_tos.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_tos_info
-#define MODULE_NAME "tos"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static struct TOSList {
 	char value;
@@ -37,7 +27,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *tosstr, *extent, *base, *temp;
-	int tosval, i;
+	int tosval;
+	unsigned int i;
 	struct TOSList *selector = NULL;
 	STRLEN len;
 
@@ -97,7 +88,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	char *tosstr = NULL, *temp;
-	int i;
+	unsigned int i;
 
 	for(i = 0; i < (sizeof(tos_list) / sizeof(struct TOSList)); i++) {
 		if(info->tos == tos_list[i].value) {
@@ -129,15 +120,14 @@ int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

@@ -1,29 +1,14 @@
-#include "../module_iface.h"
-
-#define MODULE_TYPE MODULE_TARGET
+#define BUILD_TARGET
 #define MODULE_DATATYPE int
 #define MODULE_NAME "standard"
 
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
+#include "../module_iface.h"
 
 ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	NULL,
-	NULL,
-	NULL,
-	NULL
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
 };
 
 ModuleDef *init(void) {

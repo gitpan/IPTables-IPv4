@@ -1,3 +1,7 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_mport
+#define MODULE_NAME "mport"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -7,20 +11,6 @@
 #include <netinet/in.h>
 #include <linux/netfilter_ipv4/ipt_mport.h>
 #include <limits.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_mport
-#define MODULE_NAME "mport"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
@@ -55,9 +45,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	*flags = 1;
 	info->flags = mpflags;
 
-	proto = getprotobynumber(entry->ip.proto);
-	if(!proto || (strcmp(proto->p_name, "tcp") &&
-				strcmp(proto->p_name, "udp"))) {
+	if(entry->ip.proto != IPPROTO_TCP && entry->ip.proto != IPPROTO_UDP) {
 		SET_ERRSTR("%s: Protocol must be TCP or UDP", field);
 		return(FALSE);
 	}
@@ -68,11 +56,20 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		return(FALSE);
 	}
 
-	for(off = 0, i = 0; i < IPT_MULTI_PORTS && off <= av_len(portlist);
-					i++, off++) {
+	proto = getprotobynumber(entry->ip.proto);
+	for(off = 0, i = 0; off <= av_len(portlist); i++, off++) {
+		if (i >= IPT_MULTI_PORTS) {
+			SET_ERRSTR("%s: List of ports is too long", field);
+			return(FALSE);
+		}
 		port = av_fetch(portlist, off, 0);
-		if(SvIOK(*port))
+		if(SvIOK(*port)) {
+			if(SvIV(*port) < 0 || SvIV(*port) > USHRT_MAX) {
+				SET_ERRSTR("%s: Port value out of range", field);
+				return(FALSE);
+			}
 			info->ports[i] = SvIV(*port);
+		}
 		else if(SvPOK(*port)) {
 			char *portstr, *temp, *extent, *second;
 			STRLEN len;
@@ -91,7 +88,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 			else {
 				int val = strtoul(portstr, &extent, 10);
 				if(val < 0 || val > USHRT_MAX) {
-					SET_ERRSTR("%s: Port value out of range", field, portstr);
+					SET_ERRSTR("%s: Port value out of range", field);
 					free(portstr);
 					return(FALSE);
 				}
@@ -105,7 +102,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 
 			if(second) {
 				info->pflags |= 1 << i;
-				if(++i > IPT_MULTI_PORTS) {
+				if(++i >= IPT_MULTI_PORTS) {
 					SET_ERRSTR("%s: List of ports is too long", field);
 					free(portstr);
 					return(FALSE);
@@ -155,7 +152,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	int i;
 	AV *av;
 	SV *sv;
-	char *keyname;
+	char *keyname = NULL;
 	struct servent *service;
 	struct protoent *proto;
 
@@ -171,7 +168,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 				info->ports[i] == info->ports[i-1])
 			break;
 		
-		service = getservbyport(htons(info->ports[i]), proto->p_name);
+		service = getservbyport(htons(info->ports[i]), proto->p_name); // LEAK
 		if(service)
 			sv = newSVpv(service->s_name, 0);
 		else
@@ -180,7 +177,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 		if(info->pflags & (1<<i)) {
 			i++;
 			service = getservbyport(htons(info->ports[i]),
-							proto->p_name);
+							proto->p_name); // LEAK
 			if(SvIOK(sv))
 				sv = newSVpvf("%u", SvIV(sv));
 
@@ -201,7 +198,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	else if(info->flags == IPT_MPORT_EITHER)
 		keyname = "ports";
 	
-	hv_store(ent_hash, strdup(keyname), strlen(keyname), newRV((SV *)av), 0);
+	hv_store(ent_hash, keyname, strlen(keyname), newRV_noinc((SV *)av), 0);
 }
 
 int final_check(void *myinfo, int flags) {
@@ -215,15 +212,13 @@ int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	NULL, /* setup */
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

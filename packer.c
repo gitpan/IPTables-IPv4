@@ -1,4 +1,4 @@
-/* This code will pack the contents of a Perl hash into a (struct ipt_entry)
+/* This code will pack the contents of a Perl hash into a (ENTRY)
  * for use in rule-adding andd rule-modifying operations.
  */
 
@@ -26,8 +26,9 @@
 #include "perl.h"
 #include "XSUB.h"
 
-/* for struct ipt_entry and co. */
-#include <libiptc/libiptc.h>
+/* for iptables/ip6tables internals */
+#include "local_types.h"
+
 /* for getprotobynumber() and getprotobyname() */
 #include <netdb.h>
 /* for inet_pton() */
@@ -43,20 +44,21 @@
 #include "packer.h"
 #include "loader.h"
 
-#define ADDRTEXTWIDTH INET_ADDRSTRLEN * 2 + 1
+#define ADDRTEXTWIDTH ADDR_STRLEN * 2 + 1
 
 typedef struct {
-	struct ipt_entry_match *match;
+	ENTRY_MATCH *match;
 	int flags;
 } MatchElem;
 
 typedef MatchElem * MatchList;
 
-/* Parse out an IP address/mask pair into (struct in_addr)s */
-static int parse_addr(SV *addrsv, struct in_addr *addr, struct in_addr *mask,
+/* Parse out an IP address/mask pair into (ADDR_TYPE)s */
+static int parse_addr(SV *addrsv, ADDR_TYPE *addr, ADDR_TYPE *mask,
 				bool *inv) {
 	char *sep, *maskstr, *maskend, *addrstr, *base, *temp;
 	unsigned int maskwidth;
+	unsigned char *mask_access;
 	STRLEN len;
 
 	*inv = FALSE;
@@ -85,28 +87,34 @@ static int parse_addr(SV *addrsv, struct in_addr *addr, struct in_addr *mask,
 		/* Try to read an int from the mask side */
 		maskwidth = strtoul(maskstr, &maskend, 10);
 		/* If the integer ends before the mask does, then assume it's
-		 * a full dotted-quad netmask */
-		if(strlen(maskstr) > (maskend - maskstr)) {
-			if(inet_pton(AF_INET, maskstr, mask) < 1) {
+		 * a full netmask */
+		if(strlen(maskstr) > maskend - maskstr) {
+			if(inet_pton(ADDR_FAMILY, maskstr, mask) < 1) {
 				SET_ERRSTR("Couldn't parse mask '%s'", maskstr);
 				goto pa_failed;
 			}
 		}
 		/* If not, it's a single-value mask */
 		else {
-			if(maskwidth > 32) {
+			if (maskwidth > sizeof(ADDR_TYPE) * 8) {
 				SET_ERRSTR("Impossible mask width %d", maskwidth);
 				goto pa_failed;
 			}
-			mask->s_addr = htonl(~(0xFFFFFFFFUL >> maskwidth));
+			/* Zero the whole mask */
+			memset(mask, 0, sizeof(ADDR_TYPE));
+			/* Set all whole bytes to 0xFF right away */
+			memset(mask, 0xFF, maskwidth / 8);
+			mask_access = (void *)mask;
+			/* Do shift/invert to get the trailing bits */
+			mask_access[maskwidth / 8] = ~(0xFF >> (maskwidth % 8)) & 0xFF;
 		}
 	}
 	/* If not, all mask bits must be set, because it's a host rule */
 	else
-		mask->s_addr = 0xFFFFFFFFUL;
+		memset(mask, 0xFF, sizeof(ADDR_TYPE));
 	if(sep)
 		*sep = '\0';
-	if(inet_pton(AF_INET, addrstr, addr) < 1) {
+	if(inet_pton(ADDR_FAMILY, addrstr, addr) < 1) {
 		SET_ERRSTR("Couldn't parse address '%s'", addrstr);
 		goto pa_failed;
 	}
@@ -120,7 +128,8 @@ pa_failed:
 }
 
 /* Parse an interface name */
-static int parse_iface(SV *ifacesv, char *ifnam, char *ifmask, bool *inv) {
+static int parse_iface(SV *ifacesv, char *ifnam, unsigned char *ifmask,
+				bool *inv) {
 	char *wc_off, *ifacestr, *base, *temp;
 	int maskwidth;
 	STRLEN len;
@@ -157,24 +166,25 @@ static int parse_iface(SV *ifacesv, char *ifnam, char *ifmask, bool *inv) {
 	return(TRUE);
 }
 
-/* Build a (struct ipt_entry *) from a Perl hash */
-int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
+/* Build a (ENTRY *) from a Perl hash */
+int ipt_do_pack(HV *hash, ENTRY **entry, HANDLE *table) {
 	SV *sv = NULL, **svp = NULL;
 	bool gotproto = FALSE, inv;
 	char *h_key, *rawkey, *targetname = strdup(""), *protoname = NULL;
-	int h_keylen, size, psize, i, rval, datalen = 0, n_matches = 0;
-	ModuleDef *module;
+	unsigned int h_keylen, size = 0, psize = 0, datalen = 0;
+	int rval, i, n_matches = 0;
+	ModuleDef *module = NULL;
 	MatchList matches = NULL;
-	struct ipt_entry_match *match;
+	ENTRY_MATCH *match = NULL;
 	int target_flags = 0;
-	struct ipt_entry_target *target;
+	ENTRY_TARGET *target = NULL;
 	void *datazone = NULL;
 
-	/* Give $! an empty string. If it's not still empty by the end of the
+	/* Give $! an undef value. If it's not still undef by the end of the
 	 * call, then a module was called, tried to parse a field, and couldn't. */
-	sv_setpv(ERROR_SV, "");
+	sv_setsv(ERROR_SV, &PL_sv_undef);
 	/* Setup the base allocation size, and allocate the necessary zone. */
-	*entry = calloc(1, sizeof(struct ipt_entry));
+	*entry = calloc(1, sizeof(ENTRY));
 
 	/* Must handle the protocol first! */
 	if((svp = hv_fetch(hash, "protocol", 8, FALSE))) {
@@ -182,9 +192,9 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 		/* If the protocol is being passed as an integer val, confirm that
 		 * the protocol exists, and store it. */
 		if(SvIOK(*svp)) {
-			if((protoinfo = getprotobynumber(SvIV(*svp))))
+			if((protoinfo = getprotobynumber(SvIV(*svp)))) // LEAK
 				protoname = protoinfo->p_name;
-			(*entry)->ip.proto = SvIV(*svp);
+			ENTRY_ADDR(*entry).proto = SvIV(*svp);
 		}
 		/* If it's a string, use a different approach to parse the field. */
 		else if(SvPOK(*svp)) {
@@ -200,13 +210,13 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			/* If the first character is the "magic" invert char, set the
 			 * protocol invert flag, and advance the pointer by one */
 			if(protostr[0] == INVCHAR) {
-				(*entry)->ip.invflags |= IPT_INV_PROTO;
+				ENTRY_ADDR(*entry).invflags |= INV_PROTO;
 				protostr++;
 			}
 			
 			/* Does this string contain a protocol name? If so, store that */
-			if((protoinfo = getprotobyname(protostr))) {
-				(*entry)->ip.proto = protoinfo->p_proto;
+			if((protoinfo = getprotobyname(protostr))) { // LEAK
+				ENTRY_ADDR(*entry).proto = protoinfo->p_proto;
 				protoname = protoinfo->p_name;
 			}
 			/* Is it a number? Maybe it's a protocol number... */
@@ -216,20 +226,20 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 					/* Then again, maybe not. */
 					SET_ERRSTR("proto: Unable to parse '%s'", protostr);
 					free(base);
-					return(FALSE);
+					goto pack_fail;
 				}
 				if((protoinfo = getprotobynumber(protonum)))
 					protoname = protoinfo->p_name;
-				(*entry)->ip.proto = protonum;
+				ENTRY_ADDR(*entry).proto = protonum;
 			}
 			free(base);
 		}
 		/* If the data type is wrong, pass back an error and drop out now. */
 		else {
 			SET_ERRSTR("protocol: Must be passed as integer or string");
-			return(FALSE);
+			goto pack_fail;
 		}
-		(*entry)->nfcache |= NFC_IP_PROTO;
+		(*entry)->nfcache |= NFC_IPx_PROTO;
 
 		/* Does the protocol have a name? If so, then we want to see if
 		 * it's got raw data to copy. */
@@ -246,18 +256,18 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 				 * can be coerced to be, a string. */
 				if(!SvPOK(*svp)) {
 					SET_ERRSTR("%s: Must be passed as a string", rawkey);
-					return(FALSE);
+					goto pack_fail;
 				}
 				datazone = (void *)SvPV(*svp, datalen);
 				/* Extend the list of matches by one. */
 				matches = realloc(matches, ++n_matches *
 				    sizeof(MatchElem));
 				/* Establish the match data zone's length. */
-				size = IPT_ALIGN(sizeof(struct ipt_entry_match) + datalen);
+				size = ALIGN(sizeof(ENTRY_MATCH) + datalen);
 				matches[n_matches - 1].match = match = calloc(1, size);
 				match->u.match_size = size;
 				strncpy(match->u.user.name, protoname,
-								IPT_FUNCTION_MAXNAMELEN);
+								TARGET_NAME_LEN);
 				memcpy(match->data, datazone, datalen);
 				/* Make sure it's confirmed that we have a match entry
 				 * for the selected protocol setup. */
@@ -273,7 +283,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 		/* Check the parameter's data type before we go further. */
 		if(!SvROK(*svp) || (SvTYPE((av = (AV *)SvRV(*svp))) != SVt_PVAV)) {
 			SET_ERRSTR("matches: Must be passed as array ref");
-			return(FALSE);
+			goto pack_fail;
 		}
 		/* Iterate through the list of match module names. */
 		for(i = 0; i <= av_len(av); i++) {
@@ -285,7 +295,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			/* Do some type checking to make sure we're getting a string */
 			if(!svp || !SvPOK(*svp)) {
 				SET_ERRSTR("matches: Element %u must be passed as string", i);
-				return(FALSE);
+				goto pack_fail;
 			}
 
 			temp = SvPV(*svp, len);
@@ -304,9 +314,13 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 				if(!SvPOK(*svp)) {
 					SET_ERRSTR("%s: Must be passed as string", rawkey);
 					free(matchname);
-					return(FALSE);
+					goto pack_fail;
 				}
 				datazone = (void *)SvPV(*svp, datalen);
+			}
+			else if(!module) {
+				free(matchname);
+				goto pack_fail;
 			}
 
 			if(module && module->size < datalen)
@@ -314,7 +328,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 
 			/* Allocate storage for the match's data, then stick it onto the
 			 * array of matches */
-			size = IPT_ALIGN(sizeof(struct ipt_entry_match)
+			size = ALIGN(sizeof(ENTRY_MATCH)
 							+ ((module && module->size > datalen) ?
 									module->size : datalen));
 			matches = realloc(matches, ++n_matches *
@@ -322,7 +336,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			matches[n_matches - 1].match = match = calloc(1, size);
 			matches[n_matches - 1].flags = 0;
 			match->u.match_size = size;
-			strncpy(match->u.user.name, matchname, IPT_FUNCTION_MAXNAMELEN);
+			strncpy(match->u.user.name, matchname, TARGET_NAME_LEN);
 			if(module && module->setup)
 				module->setup((void *)match, &(*entry)->nfcache);
 
@@ -339,7 +353,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 		STRLEN len;
 		if(!SvPOK(*svp)) {
 			SET_ERRSTR("target: Must be passed as string");
-			return(FALSE);
+			goto pack_fail;
 		}
 
 		free(targetname);
@@ -361,21 +375,23 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 	if(svp) {
 		if(!SvPOK(*svp)) {
 			SET_ERRSTR("%s: Must be passed as string", rawkey);
-			return(FALSE);
+			goto pack_fail;
 		}
 		datazone = (void *)SvPV(*svp, datalen);
 	}
+	else if(!module)
+		goto pack_fail;
 
 	if(module && module->size < datalen)
 		datalen = module->size;
 	
 	/* Allocate the target info struct */
-	size = IPT_ALIGN(sizeof(struct ipt_entry_target))
-			+ IPT_ALIGN(((module && module->size > datalen) ? module->size :
+	size = ALIGN(sizeof(ENTRY_TARGET))
+			+ ALIGN(((module && module->size > datalen) ? module->size :
 									datalen));
 	target = calloc(1, size);
 	target->u.target_size = size;
-	strncpy(target->u.user.name, targetname, IPT_FUNCTION_MAXNAMELEN);
+	strncpy(target->u.user.name, targetname, TARGET_NAME_LEN);
 
 	/* Call the target module's setup routine, so it can initialize its
 	 * data area correctly (if we loaded the module) */
@@ -422,70 +438,72 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 		/* Parse the source address */
 		if(!strcmp(h_key, "source")) {
 			/* Try to parse the address and mask out */
-			if(!parse_addr(sv, &(*entry)->ip.src, &(*entry)->ip.smsk, &inv)) {
+			if(!parse_addr(sv, &ENTRY_ADDR(*entry).src, &ENTRY_ADDR(*entry).smsk, &inv)) {
 				char *temp = strdup(SvPV_nolen(ERROR_SV));
 				SET_ERRSTR("%s: %s", h_key, temp);
 				free(temp);
-				return(FALSE);
+				goto pack_fail;
 			}
 			if(inv)
-				(*entry)->ip.invflags |= IPT_INV_SRCIP;
-			(*entry)->nfcache |= NFC_IP_SRC;
+				ENTRY_ADDR(*entry).invflags |= INV_SRCIP;
+			(*entry)->nfcache |= NFC_IPx_SRC;
 		}
 
 		/* Destination address */
 		else if(!strcmp(h_key, "destination")) {
 			/* Try to parse the address and mask out */
-			if(!parse_addr(sv, &(*entry)->ip.dst, &(*entry)->ip.dmsk, &inv)) {
+			if(!parse_addr(sv, &ENTRY_ADDR(*entry).dst, &ENTRY_ADDR(*entry).dmsk, &inv)) {
 				char *temp = strdup(SvPV_nolen(ERROR_SV));
 				SET_ERRSTR("%s: %s", h_key, temp);
 				free(temp);
-				return(FALSE);
+				goto pack_fail;
 			}
 			if(inv)
-				(*entry)->ip.invflags |= IPT_INV_DSTIP;
-			(*entry)->nfcache |= NFC_IP_DST;
+				ENTRY_ADDR(*entry).invflags |= INV_DSTIP;
+			(*entry)->nfcache |= NFC_IPx_DST;
 		}
 
 		/* Incoming interface */
 		else if(!strcmp(h_key, "in-interface")) {
-			if(!parse_iface(sv, (*entry)->ip.iniface, (*entry)->ip.iniface_mask,
+			if(!parse_iface(sv, ENTRY_ADDR(*entry).iniface, ENTRY_ADDR(*entry).iniface_mask,
 									&inv)) {
 				char *temp = strdup(SvPV_nolen(ERROR_SV));
 				SET_ERRSTR("%s: %s", h_key, temp);
 				free(temp);
-				return(FALSE);
+				goto pack_fail;
 			}
 			if(inv)
-				(*entry)->ip.invflags |= IPT_INV_VIA_IN;
-			(*entry)->nfcache |= NFC_IP_IF_IN;
+				ENTRY_ADDR(*entry).invflags |= INV_VIA_IN;
+			(*entry)->nfcache |= NFC_IPx_IF_IN;
 		}
 
 		/* Outgoing interface */
 		else if(!strcmp(h_key, "out-interface")) {
-			if(!parse_iface(sv, (*entry)->ip.outiface,
-									(*entry)->ip.outiface_mask, &inv)) {
+			if(!parse_iface(sv, ENTRY_ADDR(*entry).outiface,
+									ENTRY_ADDR(*entry).outiface_mask, &inv)) {
 				char *temp = strdup(SvPV_nolen(ERROR_SV));
 				SET_ERRSTR("%s: %s", h_key, temp);
 				free(temp);
-				return(FALSE);
+				goto pack_fail;
 			}
 			if(inv)
-				(*entry)->ip.invflags |= IPT_INV_VIA_OUT;
-			(*entry)->nfcache |= NFC_IP_IF_OUT;
+				ENTRY_ADDR(*entry).invflags |= INV_VIA_OUT;
+			(*entry)->nfcache |= NFC_IPx_IF_OUT;
 		}
 
+#ifndef INET6
 		/* Fragment flag */
 		else if(!strcmp(h_key, "fragment")) {
 			if(!SvIOK(sv)) {
 				SET_ERRSTR("%s: Must be passed as integer", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
-			(*entry)->ip.flags |= IPT_F_FRAG;
+			ENTRY_ADDR(*entry).flags |= IPT_F_FRAG;
 			if(!SvIV(sv))
-				(*entry)->ip.invflags |= IPT_INV_FRAG;
+				ENTRY_ADDR(*entry).invflags |= IPT_INV_FRAG;
 			(*entry)->nfcache |= NFC_IP_FRAG;
 		}
+#endif /* !INET6 */
 
 		else if(!strcmp(h_key, "bcnt")) {
 			if(SvIOK(sv))
@@ -494,7 +512,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 				sscanf(SvPV_nolen(sv), "%Lu", &(*entry)->counters.bcnt);
 			else {
 				SET_ERRSTR("%s: Must be passed as integer or string", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
 		}
 
@@ -505,7 +523,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 				sscanf(SvPV_nolen(sv), "%Lu", &(*entry)->counters.pcnt);
 			else {
 				SET_ERRSTR("%s: Must be passed as integer or string", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
 		}
 
@@ -526,7 +544,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			free(rawkey);
 			if(rval) {
 				SET_ERRSTR("%s: Mismatched raw target data", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
 		}
 
@@ -550,7 +568,7 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			 * pass back an error, and fail now */
 			if(!matched) {
 				SET_ERRSTR("%s: Mismatched raw match data", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
 		}
 		else {
@@ -566,14 +584,14 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 											MODULE_MATCH, table))) {
 				int i;
 				gotproto = TRUE;
-				size = IPT_ALIGN(sizeof(struct ipt_entry_match)) + module->size;
+				size = ALIGN(sizeof(ENTRY_MATCH)) + module->size;
 				matches = realloc(matches, ++n_matches *
 								sizeof(MatchElem));
 				i = n_matches - 1;
 				match = calloc(1, size);
 				matches[i].flags = 0;
 				match->u.match_size = size;
-				strncpy(match->u.user.name, protoname, IPT_FUNCTION_MAXNAMELEN);
+				strncpy(match->u.user.name, protoname, TARGET_NAME_LEN);
 				if(module->setup)
 					module->setup((void *)match, &(*entry)->nfcache);
 				if(module->parse_field)
@@ -586,9 +604,9 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 			 * to get, so we return a FALSE to denote that we had a problem
 			 * interpreting the hash's contents */
 			if(!rval) {
-				if(!strcmp(SvPV_nolen(ERROR_SV), ""))
+				if(!SvOK(ERROR_SV))
 					SET_ERRSTR("%s: field unknown", h_key);
-				return(FALSE);
+				goto pack_fail;
 			}
 		}
 	}
@@ -601,15 +619,15 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 		module = ipt_find_module(match->u.user.name, MODULE_MATCH, table);
 		if(module && module->final_check &&
 						!module->final_check(match, matches[i].flags))
-				return(FALSE);
+				goto pack_fail;
 	}
 	module = ipt_find_module(target->u.user.name, MODULE_TARGET, table);
 	if(module && module->final_check &&
 					!module->final_check(target, target_flags))
-			return(FALSE);
+			goto pack_fail;
 
 	/* Generate final data structure to be passed back */
-	size = IPT_ALIGN(sizeof(struct ipt_entry));
+	size = ALIGN(sizeof(ENTRY));
 	/* If there are match modules, reallocate the ipt_entry to make room
 	 * for them, and copy them into place */
 	for(i = 0; i < n_matches; i++) {
@@ -636,6 +654,25 @@ int ipt_do_pack(HV *hash, struct ipt_entry **entry, iptc_handle_t *table) {
 	 * TRUE to signify that we are OK */
 	free(targetname);
 	return(TRUE);
+pack_fail:
+	if (matches) {
+		for(i = 0; i < n_matches; i++) {
+			psize = size;
+			size += matches[i].match->u.match_size;
+			*entry = realloc(*entry, size);
+			memcpy((void *)*entry + psize, matches[i].match,
+							matches[i].match->u.match_size);
+			free(matches[i].match);
+		}
+		free(matches);
+	}
+	if (target)
+		free(target);
+	if (*entry)
+		free(*entry);
+	if (targetname)
+		free(targetname);
+	return(FALSE);
 }
 
 /* vim: ts=4

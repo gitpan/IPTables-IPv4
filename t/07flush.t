@@ -12,28 +12,29 @@ unless ($table) {
 }
 print "ok ", $testiter++, "\n";
 
-$table->create_chain("foo") || print "not ";
+$table->create_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->append_entry("foo", {}) || print "not ";
+$table->append_entry("foo", {}) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
-$table->flush_entries("foo") || print "not ";
+$table->flush_entries("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 unless (scalar($table->list_rules("foo")) == 0) {
-	print "not ";
+	print "# $!\nnot ";
 }
 print "ok ", $testiter++, "\n";
 
-$table->flush_entries("foo") || print "not ";
+$table->flush_entries("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 unless (scalar($table->list_rules("foo")) == 0) {
-	print "not ";
+	print "# $!\nnot ";
 }
 print "ok ", $testiter++, "\n";
 
-$table->delete_chain("foo") || print "not ";
+$table->delete_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 $table->flush_entries("foo") && print "not ";
 print "ok ", $testiter++, "\n";
 
 exit(0);
+# vim: ts=4

@@ -1,3 +1,7 @@
+#define BUILD_TARGET
+#define MODULE_DATATYPE struct ipt_log_info
+#define MODULE_NAME "LOG"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -5,20 +9,6 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <linux/netfilter_ipv4/ipt_LOG.h>
-
-#define MODULE_TYPE MODULE_TARGET
-#define MODULE_DATATYPE struct ipt_log_info
-#define MODULE_NAME "LOG"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 #define LOG_DEFAULT_LEVEL LOG_WARNING
 
@@ -50,7 +40,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *temp = NULL, *str = NULL, *extent = NULL;
-	int val, i;
+	int val;
+	unsigned int i;
 	logLevel *selector = NULL;
 	STRLEN len;
 
@@ -86,8 +77,10 @@ static int parse_field(char *field, SV *value, void *myinfo,
 					SET_ERRSTR("%s: Value out of range", field);
 					goto pf_failed;
 				}
-				selector->level = val;
+				info->level = val;
 			}
+			free(str);
+			str = NULL;
 		}
 		else {
 			SET_ERRSTR("%s: Must have a string or integer arg", field);
@@ -106,6 +99,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		str[len] = '\0';
 		strncpy(info->prefix, str, 29);
 		free(str);
+		str = NULL;
 	}
 	else if(!strcmp(field, "log-tcp-sequence"))
 		info->logflags |= IPT_LOG_TCPSEQ;
@@ -116,7 +110,6 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	else
 		goto pf_failed;
 
-	free(str);
 	return(TRUE);
 pf_failed:
 	if(str)
@@ -127,7 +120,7 @@ pf_failed:
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	logLevel *selector = NULL;
-	int i;
+	unsigned int i;
 	SV *sv;
 	
 	for(i = 0; i < sizeof(log_levels) / sizeof(logLevel); i++) {
@@ -155,15 +148,13 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 }
 
 ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	NULL /* final_check */
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
 };
 
 ModuleDef *init(void) {

@@ -1,3 +1,7 @@
+#define BUILD_TARGET
+#define MODULE_DATATYPE struct ip_nat_multi_range
+#define MODULE_NAME "DNAT"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -5,22 +9,8 @@
 #include <stdlib.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ip_nat.h>
-#include <netdb.h>
 #include <limits.h>
-
-#define MODULE_TYPE MODULE_TARGET
-#define MODULE_DATATYPE struct ip_nat_multi_range
-#define MODULE_NAME "DNAT"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
+#include <netinet/in.h>
 
 static void setup(void *myinfo, unsigned int *nfcache) {
 	*nfcache |= NFC_UNKNOWN;
@@ -33,8 +23,7 @@ static int parse_nat_range(char *string, struct ip_nat_range *range,
 
 	sep = strchr(string, ':');
 	if(sep) {
-		struct protoent *proto = getprotobynumber(entry->ip.proto);
-		if(strcmp(proto->p_name, "tcp") && strcmp(proto->p_name, "udp")) {
+		if(entry->ip.proto != IPPROTO_TCP && entry->ip.proto != IPPROTO_UDP) {
 			SET_ERRSTR("to-destination: Protocol must be TCP or UDP to "
 							"specify ports");
 			return(FALSE);
@@ -134,7 +123,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 			strncpy(rangestr, temp, len);
 			rangestr[len] = '\0';
 			if(!parse_nat_range(rangestr, range, entry)) {
-				if(!strcmp(SvPV_nolen(perl_get_sv("!", 0)), ""))
+				if(!SvOK(ERROR_SV))
 					SET_ERRSTR("%s: Unable to parse element %d", field, i);
 				free(rangestr);
 				return(FALSE);
@@ -209,16 +198,16 @@ static SV *string_from_nat_range(struct ip_nat_range *range) {
 
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
-	SV *sv;
+	SV *sv = NULL;
 
 	if(info->rangesize > 1) {
 		AV *av;
-		int i;
+		unsigned int i;
 
 		av = newAV();
 		for(i = 0; i < info->rangesize; i++)
 			av_store(av, i, string_from_nat_range(&info->range[i]));
-		sv = newRV((SV *)av);
+		sv = newRV_noinc((SV *)av);
 	}
 	else if(info->rangesize == 1)
 		sv = string_from_nat_range(info->range);
@@ -236,15 +225,14 @@ static int final_check(void *myinfo, int flags) {
 }
 
 ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

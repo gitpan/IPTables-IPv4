@@ -1,25 +1,15 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_tcpmss_match_info
+#define MODULE_NAME "tcpmss"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
-#include <netdb.h>
+#include <netinet/in.h>
 #include <linux/netfilter_ipv4/ipt_tcpmss.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_tcpmss_match_info
-#define MODULE_NAME "tcpmss"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static void setup(void *myinfo, unsigned int *nfcache) {
 	*nfcache |= NFC_IP_PROTO_UNKNOWN;
@@ -30,7 +20,6 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *sep, *extent, *temp, *str, *base;
 	int val;
-	struct protoent *proto;
 	STRLEN len;
 
 	if(strcmp(field, "mss"))
@@ -38,9 +27,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 
 	*flags = 1;
 
-	proto = getprotobynumber(entry->ip.proto);
-	if(!proto || strcmp(proto->p_name, "tcp") ||
-					entry->ip.invflags & IPT_INV_PROTO) {
+	if(entry->ip.proto != IPPROTO_TCP || entry->ip.invflags & IPT_INV_PROTO) {
 		SET_ERRSTR("%s: Protocol must be TCP", field);
 		return(FALSE);
 	}
@@ -121,15 +108,14 @@ static int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

@@ -1,1 +1,2 @@
-int ipt_do_pack(HV *, struct ipt_entry **, iptc_handle_t *);
+#include "local_types.h"
+int ipt_do_pack(HV *, ENTRY **, HANDLE *);

@@ -1,3 +1,7 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_ttl_info
+#define MODULE_NAME "ttl"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -5,20 +9,6 @@
 #include <linux/if_ether.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_ttl.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_ttl_info
-#define MODULE_NAME "ttl"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static void setup(void *myinfo, unsigned int *nfcache) {
 	*nfcache |= NFC_UNKNOWN;
@@ -104,20 +94,19 @@ int final_check(void *myinfo, int flags) {
 	return(TRUE);
 }
 
-static ModuleDef ttl_module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+static ModuleDef _module = {
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {
-	return(&ttl_module);
+	return(&_module);
 }
 
 /* vim: ts=4

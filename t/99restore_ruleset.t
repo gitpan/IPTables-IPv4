@@ -10,3 +10,4 @@ eval(join('', <$fh>));
 close($fh);
 
 %IPTables::IPv4 = %{$rules};
+# vim: ts=4

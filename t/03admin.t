@@ -12,12 +12,12 @@ unless ($table) {
 }
 print "ok ", $testiter++, "\n";
 
-$table->create_chain("foo") || print "not ";
+$table->create_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 $table->create_chain("foo") && print "not ";
 print "ok ", $testiter++, "\n";
 
-$table->delete_chain("foo") || print "not ";
+$table->delete_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 $table->delete_chain("foo") && print "not ";
 print "ok ", $testiter++, "\n";
@@ -34,43 +34,43 @@ foreach my $builtin (@builtins) {
 	print "ok ", $testiter++, "\n";
 }
 
-$table->create_chain("foo") || print "not ";
+$table->create_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->append_entry("foo", {}) || print "not ";
+$table->append_entry("foo", {}) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 $table->delete_chain("foo") && print "not ";
 print "ok ", $testiter++, "\n";
-$table->delete_entry("foo", {}) || print "not ";
+$table->delete_entry("foo", {}) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->append_entry("foo", {}) || print "not ";
+$table->append_entry("foo", {}) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->delete_num_entry("foo", 0) || print "not ";
+$table->delete_num_entry("foo", 0) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->delete_chain("foo") || print "not ";
-print "ok ", $testiter++, "\n";
-
-$table->create_chain("foo") || print "not ";
-print "ok ", $testiter++, "\n";
-$table->create_chain("foo2") || print "not ";
-print "ok ", $testiter++, "\n";
-$table->append_entry("foo", {jump => "foo2"}) || print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_chain("foo2") && print "not ";
-print "ok ", $testiter++, "\n";
-$table->append_entry("foo2", {}) || print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_chain("foo2") && print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_num_entry("foo", 0) || print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_chain("foo2") && print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_num_entry("foo2", 0) || print "not ";
-print "ok ", $testiter++, "\n";
-$table->delete_chain("foo2") || print "not ";
+$table->delete_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
-$table->create_chain("foo2") || print "not ";
+$table->create_chain("foo") || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->create_chain("foo2") || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->append_entry("foo", {jump => "foo2"}) || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->delete_chain("foo2") && print "not ";
+print "ok ", $testiter++, "\n";
+$table->append_entry("foo2", {}) || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->delete_chain("foo2") && print "not ";
+print "ok ", $testiter++, "\n";
+$table->delete_num_entry("foo", 0) || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->delete_chain("foo2") && print "not ";
+print "ok ", $testiter++, "\n";
+$table->delete_num_entry("foo2", 0) || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+$table->delete_chain("foo2") || print "# $!\nnot ";
+print "ok ", $testiter++, "\n";
+
+$table->create_chain("foo2") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
 my $rv = 1;
@@ -80,18 +80,18 @@ foreach my $chain ($table->list_chains()) {
 	}
 }
 
-print(($rv ? "" : "not "), "ok ", $testiter++, "\n");
+print(($rv ? "" : "# $!\nnot "), "ok ", $testiter++, "\n");
 
-$table->create_chain("foo") || print "not ";
+$table->create_chain("foo") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
-$table->create_chain("foo2") || print "not ";
+$table->create_chain("foo2") || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
 $rv = 1;
 foreach my $chain ($table->list_chains()) {
 	($rv = 0) unless $table->flush_entries($chain);
 }
-print(($rv ? "" : "not "), "ok ", $testiter++, "\n");
+print(($rv ? "" : "# $!\nnot "), "ok ", $testiter++, "\n");
 
 $rv = 1;
 foreach my $chain ($table->list_chains()) {
@@ -99,20 +99,20 @@ foreach my $chain ($table->list_chains()) {
 		($rv = 0) unless $table->delete_chain($chain);
 	}
 }
-print(($rv ? "" : "not "), "ok ", $testiter++, "\n");
+print(($rv ? "" : "# $!\nnot "), "ok ", $testiter++, "\n");
 
-$table->append_entry("FORWARD", {jump => "QUEUE"}) || print "not ";
+$table->append_entry("FORWARD", {jump => "QUEUE"}) || print "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
 my @rules = $table->list_rules("FORWARD");
 if (scalar(@rules) != 1) {
-	print "not ";
+	print "# $!\nnot ";
 }
 print "ok ", $testiter++, "\n";
 
 my @keylist = keys(%{$rules[0]});
 if(scalar(@keylist) != 3 || $rules[0]->{'jump'} ne "QUEUE") {
-	print "not ";
+	print "# $!\nnot ";
 }
 print "ok ", $testiter++, "\n";
 
@@ -127,3 +127,4 @@ foreach my $chain ($table->list_chains()) {
 }
 
 exit(0);
+# vim: ts=4

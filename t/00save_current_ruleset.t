@@ -11,3 +11,4 @@ print($fh "", Data::Dumper->Dump([\%IPTables::IPv4], ['rules']));
 close($fh);
 
 %IPTables::IPv4 = ();
+# vim: ts=4

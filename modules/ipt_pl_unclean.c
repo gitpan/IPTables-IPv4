@@ -1,37 +1,23 @@
-#include "../module_iface.h"
-
-#define MODULE_TYPE MODULE_MATCH
+#define BUILD_MATCH
 #define MODULE_DATATYPE void
 #define MODULE_NAME "unclean"
 
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
+#include "../module_iface.h"
 
 static void setup(void *myinfo, unsigned int *nfcache) {
 	*nfcache |= NFC_UNKNOWN;
 }
 
-ModuleDef unclean_module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(0),
-	IPT_ALIGN(0),
-	setup,
-	NULL /* parse_field */,
-	NULL /* get_fields */,
-	NULL /* final_check */
+ModuleDef _module = {
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(0),
+	.size_uspace	= IPT_ALIGN(0),
+	.setup			= setup,
 };
 
 ModuleDef *init(void) {
-	return(&unclean_module);
+	return(&_module);
 }
 /* vim: ts=4
  */

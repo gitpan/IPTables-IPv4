@@ -1,23 +1,13 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_ipv4options_info
+#define MODULE_NAME "ipv4options"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_ipv4options.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_ipv4options_info
-#define MODULE_NAME "ipv4options"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static void setup(void *myinfo, unsigned int *nfcache) {
 	*nfcache |= NFC_UNKNOWN;
@@ -38,6 +28,11 @@ static int parse_field(char *field, SV *value, void *myinfo,
 							"ipv4options match", field);
 			return(FALSE);
 		}
+		else if (*flags & IPT_IPV4OPTION_DONT_MATCH_ANY_OPT) {
+			SET_ERRSTR("%s: Can't use 'ssrr' and 'any-opt' negative",
+							field);
+			return(FALSE);
+		}
 		info->options |= IPT_IPV4OPTION_MATCH_SSRR;
 		*flags |= IPT_IPV4OPTION_MATCH_SSRR;
 	}
@@ -50,6 +45,11 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		else if(*flags & IPT_IPV4OPTION_DONT_MATCH_SRR) {
 			SET_ERRSTR("%s: Can't use both 'lsrr' and 'no-srr' with "
 							"ipv4options match", field);
+			return(FALSE);
+		}
+		else if (*flags & IPT_IPV4OPTION_DONT_MATCH_ANY_OPT) {
+			SET_ERRSTR("%s: Can't use 'lsrr' and 'any-opt' negative",
+							field);
 			return(FALSE);
 		}
 		info->options |= IPT_IPV4OPTION_MATCH_LSRR;
@@ -66,16 +66,31 @@ static int parse_field(char *field, SV *value, void *myinfo,
 							"ipv4options match", field);
 			return(FALSE);
 		}
+		else if (*flags & IPT_IPV4OPTION_MATCH_ANY_OPT) {
+			SET_ERRSTR("%s: Can't use 'no-srr' and 'any-opt'",
+							field);
+			return(FALSE);
+		}
 		info->options |= IPT_IPV4OPTION_DONT_MATCH_SRR;
 		*flags |= IPT_IPV4OPTION_DONT_MATCH_SRR;
 	}
 	else if(!strcmp(field, "rr")) {
 		if(SvIOK(value)) {
 			if(SvIV(value)) {
+				if (*flags & IPT_IPV4OPTION_DONT_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'rr' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_MATCH_RR;
 				*flags |= IPT_IPV4OPTION_MATCH_RR;
 			}
 			else {
+				if (*flags & IPT_IPV4OPTION_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'rr' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_DONT_MATCH_RR;
 				*flags |= IPT_IPV4OPTION_DONT_MATCH_RR;
 			}
@@ -88,10 +103,20 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	else if(!strcmp(field, "ts")) {
 		if(SvIOK(value)) {
 			if(SvIV(value)) {
+				if (*flags & IPT_IPV4OPTION_DONT_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'ts' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_MATCH_TIMESTAMP;
 				*flags |= IPT_IPV4OPTION_MATCH_TIMESTAMP;
 			}
 			else {
+				if (*flags & IPT_IPV4OPTION_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'ts' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_DONT_MATCH_TIMESTAMP;
 				*flags |= IPT_IPV4OPTION_DONT_MATCH_TIMESTAMP;
 			}
@@ -104,10 +129,20 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	else if(!strcmp(field, "ra")) {
 		if(SvIOK(value)) {
 			if(SvIV(value)) {
+				if (*flags & IPT_IPV4OPTION_DONT_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'ra' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_MATCH_ROUTER_ALERT;
 				*flags |= IPT_IPV4OPTION_MATCH_ROUTER_ALERT;
 			}
 			else {
+				if (*flags & IPT_IPV4OPTION_MATCH_ANY_OPT) {
+					SET_ERRSTR("%s: Can't use 'ra' and 'any-opt' opposite",
+									field);
+					return(FALSE);
+				}
 				info->options |= IPT_IPV4OPTION_DONT_MATCH_ROUTER_ALERT;
 				*flags |= IPT_IPV4OPTION_DONT_MATCH_ROUTER_ALERT;
 			}
@@ -142,8 +177,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 									field);
 					return(FALSE);
 				}
-				info->options |= IPT_IPV4OPTION_DONT_MATCH_ROUTER_ALERT;
-				*flags |= IPT_IPV4OPTION_DONT_MATCH_ROUTER_ALERT;
+				info->options |= IPT_IPV4OPTION_DONT_MATCH_ANY_OPT;
+				*flags |= IPT_IPV4OPTION_DONT_MATCH_ANY_OPT;
 			}
 		}
 		else {
@@ -194,20 +229,19 @@ int final_check(void *myinfo, int flags) {
 	return(TRUE);
 }
 
-static ModuleDef DSCP_module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+static ModuleDef _module = {
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {
-	return(&DSCP_module);
+	return(&_module);
 }
 /* vim: ts=4
  */

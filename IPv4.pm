@@ -23,7 +23,7 @@ require AutoLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.97b';
+$VERSION = '0.98';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -163,8 +163,9 @@ The method will return 1 if C<chainname> is a chain, 0 if not.
 
 =item @chains = $table-E<gt>list_chains()
 
-This returns an array containing names of all existing chains in the table that
-C<$table> points to.
+In array context, this method returns an array containing names of all
+existing chains in the table that C<$table> points to. In scalar context,
+returns the number of chains in the table.
 
 =item $success = $table-E<gt>rename_chain('oldname', 'newname')
 
@@ -210,8 +211,9 @@ C<$hashref> at index C<$rulenum> in the chain C<chainname>.
 
 =item @rules = $table-E<gt>list_rules('chainname')
 
-This returns an array of hash references, which contain descriptions of each
-rule in the chain C<chainname>.
+When called in array context, this method returns an array of hash
+references, which contain descriptions of each rule in the chain
+C<chainname>. In scalar context, returns the number of rules in the chain.
 
 Note that if the chain C<chainname> does not exist, an empty list will be
 returned, as will listing an empty chain. Be sure to verify that the chain
@@ -236,7 +238,8 @@ This zeroes all packet counters in the chain C<chainname>.
 
 This attempts to commit all changes made to the IP chains in the table that
 C<$table> points to, and closes the connection to the kernel-level netfilter
-subsystem.
+subsystem. If you wish to apply your changes back to the kernel, you must
+call this.
 
 =back
 

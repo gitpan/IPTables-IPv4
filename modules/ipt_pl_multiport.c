@@ -1,3 +1,7 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_multiport
+#define MODULE_NAME "multiport"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -7,20 +11,6 @@
 #include <netinet/in.h>
 #include <linux/netfilter_ipv4/ipt_multiport.h>
 
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_multiport
-#define MODULE_NAME "multiport"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
-
 static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
@@ -28,7 +18,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	AV *portlist;
 	struct servent *service;
 	struct protoent *proto;
-	int i;
+	int i, val;
 	char *portstr, *extent;
 	
 	if(!strcmp(field, "source-ports")) {
@@ -54,9 +44,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	}
 
 	*flags = 1;
-	proto = getprotobynumber(entry->ip.proto);
-	if(!proto && strcasecmp(proto->p_name, "tcp") &&
-				strcasecmp(proto->p_name, "udp")) {
+	if(entry->ip.proto != IPPROTO_TCP && entry->ip.proto != IPPROTO_UDP) {
 		SET_ERRSTR("%s: Protocol must be TCP or UDP", field);
 		return(FALSE);
 	}
@@ -73,10 +61,16 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	}
 
 	info->count = 0;
+	proto = getprotobynumber(entry->ip.proto);
 	for(i = 0; i <= av_len(portlist); i++) {
 		port = av_fetch(portlist, i, 0);
-		if(SvIOK(*port))
-			info->ports[i] = SvIV((*port));
+		if(SvIOK(*port)) {
+			if (SvIV(*port) < 0 || SvIV(*port) > USHRT_MAX) {
+				SET_ERRSTR("%s: Value out of range", field);
+				return(FALSE);
+			}
+			info->ports[i] = SvIV(*port);
+		}
 		else if(SvPOK(*port)) {
 			char *temp;
 			STRLEN len;
@@ -89,13 +83,19 @@ static int parse_field(char *field, SV *value, void *myinfo,
 			if(service)
 				info->ports[i] = htons(service->s_port);
 			else {
-				info->ports[i] = strtoul(portstr, &extent, 10);
+				val= strtoul(portstr, &extent, 10);
 				if(portstr + strlen(portstr) > extent) {
 					SET_ERRSTR("%s: Couldn't parse port '%s'", field, portstr);
 					info->count = 0;
 					free(portstr);
 					return(FALSE);
 				}
+				if (val < 0 || val > USHRT_MAX) {
+					SET_ERRSTR("%s: Value out of range", field);
+					free(portstr);
+					return(FALSE);
+				}
+				info->ports[i] = val;
 			}
 			free(portstr);
 		}
@@ -114,7 +114,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	int i;
 	AV *av;
-	char *keyname;
+	char *keyname = NULL;
 	struct servent *service;
 	struct protoent *proto;
 
@@ -124,7 +124,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	
 	for(i = 0; i < info->count; i++) {
 		service = getservbyport(htons(info->ports[i]),
-		    proto->p_name);
+		    proto->p_name); // LEAK
 		if(service)
 			av_push(av, newSVpv(service->s_name, 0));
 		else
@@ -138,7 +138,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	else if(info->flags == IPT_MULTIPORT_EITHER)
 		keyname = "ports";
 	
-	hv_store(ent_hash, strdup(keyname), strlen(keyname), newRV((SV *)av), 0);
+	hv_store(ent_hash, keyname, strlen(keyname), newRV_noinc((SV *)av), 0);
 }
 
 int final_check(void *myinfo, int flags) {
@@ -151,15 +151,13 @@ int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	NULL, /* setup */
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

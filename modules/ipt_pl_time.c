@@ -1,3 +1,7 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_time_info
+#define MODULE_NAME "time"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
@@ -5,20 +9,6 @@
 #include <linux/netfilter_ipv4/ipt_time.h>
 #include <time.h>
 #include <limits.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_time_info
-#define MODULE_NAME "time"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 #define TIME_TIMESTART	(1 << 0)
 #define TIME_TIMESTOP	(1 << 1)
@@ -102,7 +92,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	}
 	else if(!strcmp(field, "days")) {
 		SV *av = NULL;
-		int i, j;
+		int i;
+		unsigned int j;
 		if(!SvROK(value)) {
 			SET_ERRSTR("%s: Must have a reference arg", field);
 			return(FALSE);
@@ -152,25 +143,30 @@ static int parse_field(char *field, SV *value, void *myinfo,
 static SV *hrmin_to_sv(u_int16_t mins) {
 	char *string = NULL;
 	int hrs = mins / 60;
+	SV *sv;
 
 	mins %= 60;
 	hrs %= 24;
 	asprintf(&string, "%d:%.2d", hrs, mins);
-	return(newSVpv(string, 0));
+
+	sv = newSVpv(string, 0);
+	free(string);
+
+	return sv;
 }
 
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	AV *av = newAV();
-	int i;
+	unsigned int i;
 
 	hv_store(ent_hash, "timestart", 9, hrmin_to_sv(info->time_start), 0);
 	hv_store(ent_hash, "timestop", 8, hrmin_to_sv(info->time_stop), 0);
 	for(i = 0; i < sizeof(days) / sizeof(DayList); i++) {
 		if(info->days_match & days[i].value)
-			av_push(av, newSVpv(strdup(days[i].name), 0));
+			av_push(av, newSVpv(days[i].name, 0));
 	}
-	hv_store(ent_hash, "days", 4, newRV((SV *)av), 0);
+	hv_store(ent_hash, "days", 4, newRV_noinc((SV *)av), 0);
 }
 
 static int final_check(void *myinfo, int flags) {
@@ -185,15 +181,14 @@ static int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

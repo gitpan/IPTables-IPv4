@@ -1,1 +1,3 @@
-HV *ipt_do_unpack(struct ipt_entry *, iptc_handle_t *);
+#include "local_types.h"
+
+HV *ipt_do_unpack(ENTRY *, HANDLE *);

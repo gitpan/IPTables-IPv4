@@ -1,4 +1,4 @@
-/* This code unpacks a (struct ipt_entry) into a Perl hash, for passing to
+/* This code unpacks a rule into a Perl hash, for passing to
  * a script for output and manipulation purposes.
  */
 
@@ -26,8 +26,9 @@
 #include "perl.h"
 #include "XSUB.h"
 
-/* for struct ipt_entry and co. */
-#include <libiptc/libiptc.h>
+/* for iptables/ip6tables internals */
+#include "local_types.h"
+
 /* for getprotobynumber() */
 #include <netdb.h>
 /* for inet_ntop() */
@@ -36,7 +37,6 @@
 #include <arpa/inet.h>
 /* for strtoul() */
 #include <stdlib.h>
-/* for ntohl() */
 #include <netinet/in.h>
 
 #include "unpacker.h"
@@ -44,37 +44,54 @@
 #include "module_iface.h"
 
 /* Translate an address/netmask pair into a string */
-static SV *addr_and_mask_to_sv(struct in_addr addr, struct in_addr mask,
+static SV *addr_and_mask_to_sv(ADDR_TYPE addr, ADDR_TYPE mask,
 		bool inv) {
-	char *temp, *temp2, addrstr[INET_ADDRSTRLEN + 1];
-	u_int32_t maskval;
-	int i, maskwidth = 0, at_zeros = FALSE, contiguous = TRUE;
+	char *temp, *temp2, addrstr[ADDR_STRLEN + 1];
+	unsigned char *mask_access;
+	int i, j, maskwidth = 0, at_zeros = FALSE, contiguous = TRUE;
 	SV *sv;
 
 	/* We always translate the address into a string */
-	inet_ntop(AF_INET, (void *)&addr, addrstr, INET_ADDRSTRLEN);
+	inet_ntop(ADDR_FAMILY, (void *)&addr, addrstr, ADDR_STRLEN);
 	temp = strdup(addrstr);
-	maskval = ntohl(mask.s_addr);
+	mask_access = (void *)&mask;
 	/* Do the magic work of converting the netmask to a width value, or a
 	 * plain netmask, if it can't be stored as a width value */
-	for(i = 31; i >= 0; i--) {
-		if((maskval >> i) & 1) {
-			maskwidth++;
-			if(at_zeros)
-				contiguous = FALSE;
-		}
-		else
+	for (i = 0; i < sizeof(ADDR_TYPE) && mask_access[i] != 0; i++) {
+		switch (mask_access[i]) {
+		  case 0:
 			at_zeros = TRUE;
+			break;
+		  case 0xFF:
+			/* Optimize out whole bytes with all bits set */
+			maskwidth += 8;
+			if (at_zeros)
+				contiguous = FALSE;
+			break;
+		  default:
+			for (j = 7; j >= 0; j--) {
+				if ((mask_access[i] >> j) & 1) {
+					maskwidth++;
+					if (at_zeros) {
+						contiguous = FALSE;
+						break;
+					}
+				}
+				else
+					at_zeros = TRUE;
+			}
+			break;
+		}
+		if (!contiguous)
+			break;
 	}
-	if(maskwidth < 32) {
+	if(maskwidth < sizeof(ADDR_TYPE) * 8) {
 		/* Ok, this is not a host entry */
 		if(contiguous) /* If it was contiguous, it can be expressed
 			        * as a single mask value */
 			asprintf(&temp2, "%s/%u", temp, maskwidth);
-		else { /* Otherwise, express it as a regular dotted-quad
-		        * netmask value */
-			inet_ntop(AF_INET, &mask.s_addr, addrstr,
-					INET_ADDRSTRLEN);
+		else { /* Otherwise, express it as a full netmask value */
+			inet_ntop(ADDR_FAMILY, &mask, addrstr, ADDR_STRLEN);
 			asprintf(&temp2, "%s/%s", temp, addrstr);
 		}
 		free(temp);
@@ -90,16 +107,16 @@ static SV *addr_and_mask_to_sv(struct in_addr addr, struct in_addr mask,
 	return(sv);
 }
 
-/* We have a job, kids - to turn a (struct ipt_entry *) into a hash... */
-HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
+/* We have a job, kids - to turn a (ENTRY *) into a hash... */
+HV *ipt_do_unpack(ENTRY *entry, HANDLE *table) {
 	SV *sv;
 	HV *hash;
 	AV *match_list = NULL;
 	char *temp, *rawkey, *targetname = NULL, *protoname = NULL;
 	struct protoent *protoinfo;
 	ModuleDef *module = NULL;
-	struct ipt_entry_match *match = NULL;
-	struct ipt_entry_target *target = NULL;
+	ENTRY_MATCH *match = NULL;
+	ENTRY_TARGET *target = NULL;
 
 	/* If the pointer is NULL, then we've got a slight problem. */
 	if(!entry)
@@ -109,23 +126,23 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 	
 	/* Ok, let's break this down point by point. First off, the source
 	 * address... */
-	if(entry->nfcache & NFC_IP_SRC) {
-		sv = addr_and_mask_to_sv(entry->ip.src, entry->ip.smsk,
-				entry->ip.invflags & IPT_INV_SRCIP);
+	if(entry->nfcache & NFC_IPx_SRC) {
+		sv = addr_and_mask_to_sv(ENTRY_ADDR(entry).src, ENTRY_ADDR(entry).smsk,
+				ENTRY_ADDR(entry).invflags & INV_SRCIP);
 		hv_store(hash, "source", 6, sv, 0);
 	}
 	
 	/* Now, the destination address */
-	if(entry->nfcache & NFC_IP_DST) {
-		sv = addr_and_mask_to_sv(entry->ip.dst, entry->ip.dmsk,
-				entry->ip.invflags & IPT_INV_DSTIP);
+	if(entry->nfcache & NFC_IPx_DST) {
+		sv = addr_and_mask_to_sv(ENTRY_ADDR(entry).dst, ENTRY_ADDR(entry).dmsk,
+				ENTRY_ADDR(entry).invflags & INV_DSTIP);
 		hv_store(hash, "destination", 11, sv, 0);
 	}
 	
 	/* Now, the packet incoming interface */
-	if(entry->nfcache & NFC_IP_IF_IN) {
-		char *ifname = strdup(entry->ip.iniface);
-		if(entry->ip.invflags & IPT_INV_VIA_IN) {
+	if(entry->nfcache & NFC_IPx_IF_IN) {
+		char *ifname = strdup(ENTRY_ADDR(entry).iniface);
+		if(ENTRY_ADDR(entry).invflags & INV_VIA_IN) {
 			asprintf(&temp, "%c%s", INVCHAR, ifname);
 			free(ifname);
 			ifname = temp;
@@ -135,9 +152,9 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 	}
 	
 	/* Packet outgoing interface */
-	if(entry->nfcache & NFC_IP_IF_OUT) {
-		char *ifname = strdup(entry->ip.outiface);
-		if(entry->ip.invflags & IPT_INV_VIA_OUT) {
+	if(entry->nfcache & NFC_IPx_IF_OUT) {
+		char *ifname = strdup(ENTRY_ADDR(entry).outiface);
+		if(ENTRY_ADDR(entry).invflags & INV_VIA_OUT) {
 			asprintf(&temp, "%c%s", INVCHAR, ifname);
 			free(ifname);
 			ifname = temp;
@@ -147,12 +164,12 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 	}
 	
 	/* Protocol */
-	if(entry->nfcache & NFC_IP_PROTO) {
+	if(entry->nfcache & NFC_IPx_PROTO) {
 		char *protostr;
-		if((protoinfo = getprotobynumber(entry->ip.proto))) {
+		if((protoinfo = getprotobynumber(ENTRY_ADDR(entry).proto))) {
 			protostr = strdup(protoinfo->p_name);
 			protoname = protostr;
-			if(entry->ip.invflags & IPT_INV_PROTO) {
+			if(ENTRY_ADDR(entry).invflags & INV_PROTO) {
 				asprintf(&temp, "%c%s", INVCHAR, protostr);
 				free(protostr);
 				protostr = temp;
@@ -162,24 +179,26 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 			sv = newSVpv(protostr, 0);
 			free(protostr);
 		}
-		else if(entry->ip.invflags & IPT_INV_PROTO) {
-			asprintf(&protostr, "%c%u", INVCHAR, entry->ip.proto);
+		else if(ENTRY_ADDR(entry).invflags & INV_PROTO) {
+			asprintf(&protostr, "%c%u", INVCHAR, ENTRY_ADDR(entry).proto);
 			sv = newSVpv(protostr, 0);
 			free(protostr);
 		}
 		else
-			sv = newSViv(entry->ip.proto);
+			sv = newSViv(ENTRY_ADDR(entry).proto);
 		hv_store(hash, "protocol", 8, sv, 0);
 	}
 
+#ifndef INET6
 	/* Fragment flag */
-	if(entry->ip.flags & IPT_F_FRAG) {
-		hv_store(hash, "fragment", 8, newSViv(!(entry->ip.invflags &
+	if(ENTRY_ADDR(entry).flags & IPT_F_FRAG) {
+		hv_store(hash, "fragment", 8, newSViv(!(ENTRY_ADDR(entry).invflags &
 										IPT_INV_FRAG)), 0);
 	}
-	
+#endif /* !INET6 */
+
 	/* Jump target */
-	if((targetname = (char *)iptc_get_target(entry, table))) {
+	if((targetname = (char *)GET_TARGET(entry, table))) {
 		target = (void *)entry + entry->target_offset;
 		if(strcmp("", targetname))
 			hv_store(hash, "jump", 4, newSVpv(targetname, 0), 0);
@@ -190,7 +209,7 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 		if(!module) {
 			char *data;
 			int data_size = target->u.target_size -
-				IPT_ALIGN(sizeof(struct ipt_entry_target));
+				ALIGN(sizeof(ENTRY_TARGET));
 			if(data_size > 0) {
 				asprintf(&rawkey, "%s" TARGET_RAW_POSTFIX, targetname);
 				data = malloc(data_size);
@@ -226,7 +245,7 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 		if(!module) {
 			char *data;
 			int data_size = match->u.match_size -
-					IPT_ALIGN(sizeof(struct ipt_entry_match));
+					ALIGN(sizeof(ENTRY_MATCH));
 			asprintf(&rawkey, "%s" MATCH_RAW_POSTFIX, match->u.user.name);
 			data = malloc(data_size);
 			memcpy(data, match->data, data_size);
@@ -239,7 +258,7 @@ HV *ipt_do_unpack(struct ipt_entry *entry, iptc_handle_t *table) {
 	}
 
 	if(match_list)
-		hv_store(hash, "matches", 7, newRV((SV *)match_list), 0);
+		hv_store(hash, "matches", 7, newRV_noinc((SV *)match_list), 0);
 	
 	/* And the byte and packet counters */
 	asprintf(&temp, "%llu", entry->counters.bcnt);

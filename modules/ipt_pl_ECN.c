@@ -1,23 +1,13 @@
+#define BUILD_TARGET
+#define MODULE_DATATYPE struct ipt_ECN_info
+#define MODULE_NAME "ECN"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_ECN.h>
-
-#define MODULE_TYPE MODULE_TARGET
-#define MODULE_DATATYPE struct ipt_ECN_info
-#define MODULE_NAME "ECN"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
@@ -129,15 +119,13 @@ int final_check(void *myinfo, int flags) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	NULL /* setup */,
-	parse_field,
-	get_fields,
-	final_check
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {

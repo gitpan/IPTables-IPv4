@@ -1,6 +1,6 @@
 package IPTables::IPv4::Toplevel;
 
-use IPTables::IPv4::Table;
+use IPTables::IPv4::TableTie;
 use FileHandle;
 
 sub TIEHASH {
@@ -16,8 +16,8 @@ sub FETCH {
 	return undef unless $table;
 
 	my %store;
-	tie(%store, 'IPTables::IPv4::Table', $table);
-	$self->{$tablename} = {'TABLE' => $table, 'DATA' => \%store};
+	tie(%store, 'IPTables::IPv4::TableTie', $table);
+	$self->{$tablename} = {'TABLE' => \$table, 'DATA' => \%store};
 	return($self->{$tablename}->{DATA});
 }
 

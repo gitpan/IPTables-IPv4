@@ -1,3 +1,13 @@
+NOTE:   !!!!PLEASE READ THIS!!!!
+
+There has been a change in the semantics of IPTables::IPv4 as of 0.98.
+In the future, if you have changes which you intend to have applied back
+to the kernel, you must EXPLICITLY call the commit() method on the table
+handle. Letting the DESTROY handle execute will simply call iptc_free()
+now. This is useful for if someone wants to just see the rules, or play
+with adding rules to chains, without actually changing the kernel side.
+The ability to do this was provided through a recent update to libiptc.
+
 Introduction:
 
 IPTables::IPv4 is a Perl module, written in C using the XS toolset, and
@@ -34,6 +44,15 @@ This particular module has certain advantages over other similar modules:
     package is 100% self-contained - it does not require any acrobatics
     with installing libiptc.a and the libiptc/iptables headers in unusual
     locations to build.
+
+I am also now including support for IPv6 firewalling rules, by way of the
+IPTables::IPv6 module. I have ported several modules for use with
+IPTables::IPv6, so it should at least be moderately useful. I've ported
+all the standard modules, so it should be reasonably useful. I don't yet
+have embedded docs for the modules, but they function like the IPv4 ones
+(except for icmpv6 - there are fewer ICMPv6 types, and the field name is
+'icmpv6-type' - look at the source if you're curious). HL and hl are like
+TTL and ttl for IPv4, so use them in the same way. eui64 takes no options.
 
 Please see the embedded POD documentation (perldoc IPTables::IPv4), or the
 included PDF, for full details on using the IPTables::IPv4 module.

@@ -12,7 +12,7 @@ unless ($table) {
 }
 print "ok ", $testiter++, "\n";
 
-$table->append_entry("FORWARD", {jump => "DENY"}) || print "not ";
+$table->append_entry("FORWARD", {jump => "DENY"}) && print "not ";
 print "ok ", $testiter++, "\n";
 
 foreach my $chain (qw/DROP input forward output/) {
@@ -20,7 +20,8 @@ foreach my $chain (qw/DROP input forward output/) {
 	print "ok ", $testiter++, "\n";
 }
 
-$table->commit() && "not ";
+$table->commit() || "# $!\nnot ";
 print "ok ", $testiter++, "\n";
 
 exit(0);
+# vim: ts=4

@@ -1,24 +1,18 @@
+#define BUILD_TARGET
+#define MODULE_DATATYPE struct ipt_reject_info
+#define MODULE_NAME "REJECT"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <syslog.h>
-#include <netdb.h>
+#include <netinet/in.h>
 #include <linux/netfilter_ipv4/ipt_REJECT.h>
 
-#define MODULE_TYPE MODULE_TARGET
-#define MODULE_DATATYPE struct ipt_reject_info
-#define MODULE_NAME "REJECT"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
+#ifndef IPT_ICMP_ADMIN_PROHIBITED
+#define IPT_ICMP_ADMIN_PROHIBITED	IPT_TCP_RESET + 1
 #endif
 
 typedef struct {
@@ -33,7 +27,8 @@ rejectList reject_types[] = {
 	{ "icmp-proto-unreachable",	"proto-unreach", IPT_ICMP_PROT_UNREACHABLE },
 	{ "icmp-net-prohibited",	"net-prohib",	IPT_ICMP_NET_PROHIBITED },
 	{ "icmp-host-prohibited",	"host-prohib",	IPT_ICMP_HOST_PROHIBITED },
-	{ "tcp-reset",				NULL,			IPT_TCP_RESET }
+	{ "tcp-reset",				NULL,			IPT_TCP_RESET },
+	{ "icmp-admin-prohibited",	"admin-prohib",	IPT_ICMP_ADMIN_PROHIBITED },
 };
 
 static void setup(void *myinfo, unsigned int *nfcache) {
@@ -47,8 +42,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *str, *temp;
-	int i;
-	struct protoent *proto;
+	unsigned int i;
 	rejectList *selector = NULL;
 	STRLEN len;
 
@@ -79,10 +73,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		return(FALSE);
 	}
 	
-	proto = getprotobynumber(entry->ip.proto);
-	
-	if(selector->with == IPT_TCP_RESET && (!proto ||
-							strcmp(proto->p_name, "tcp") ||
+	if(selector->with == IPT_TCP_RESET && (entry->ip.proto != IPPROTO_TCP ||
 							(entry->ip.invflags & IPT_INV_PROTO))) {
 		SET_ERRSTR("%s: TCP RST can only be used with TCP protocol", field);
 		return(FALSE);
@@ -96,7 +87,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	rejectList *selector = NULL;
-	int i;
+	unsigned int i;
 	
 	for(i = 0; i < sizeof(reject_types) / sizeof(rejectList); i++) {
 		if(info->with == reject_types[i].with) {
@@ -114,15 +105,13 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 }
 
 ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	NULL /* final_check */
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
 };
 
 ModuleDef *init(void) {

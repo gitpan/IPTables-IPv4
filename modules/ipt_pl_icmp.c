@@ -1,22 +1,12 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_icmp
+#define MODULE_NAME "icmp"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_icmp
-#define MODULE_NAME "icmp"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 typedef struct {
 	char *name;
@@ -74,7 +64,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *typename, *slash, *sep, *extent;
-	int type, code, i;
+	int type, code;
+	unsigned int i;
 	icmpTypeInfo *selector = NULL;
 
 	if(!strcmp(field, "icmp-type")) {
@@ -85,7 +76,6 @@ static int parse_field(char *field, SV *value, void *myinfo,
 				return(FALSE);
 			}
 			info->type = type;
-			*nfcache |= NFC_IP_SRC_PT;
 		}
 		else if(SvPOK(value)) {
 			char *temp, *base;
@@ -116,19 +106,30 @@ static int parse_field(char *field, SV *value, void *myinfo,
 					info->type = icmp_types[i].type;
 					info->code[0] = icmp_types[i].code_min;
 					info->code[1] = icmp_types[i].code_max;
-					*nfcache |= NFC_IP_SRC_PT | NFC_IP_DST_PT;
 				}
 			}
-			if(selector) {
+			if(selector)
 				free(base);
-				return(TRUE);
-			}
-			if((slash = strchr(typename, '/'))) {
-				*(slash++) = '\0';
-				if((sep = strchr(slash, '-'))) {
-					*(sep++) = '\0';
-					code = strtoul(sep, &extent, 10);
-					if(extent - sep < strlen(sep)) {
+			else {
+				if((slash = strchr(typename, '/'))) {
+					*(slash++) = '\0';
+					if((sep = strchr(slash, '-'))) {
+						*(sep++) = '\0';
+						code = strtoul(sep, &extent, 10);
+						if(extent - sep < strlen(sep)) {
+							SET_ERRSTR("%s: couldn't parse field", field);
+							free(base);
+							return(FALSE);
+						}
+						if(code < 0 || code > UCHAR_MAX) {
+							SET_ERRSTR("%s: code out of range", field);
+							free(base);
+							return(FALSE);
+						}
+						info->code[1] = code;
+					}
+					code = strtoul(slash, &extent, 10);
+					if(extent - slash < strlen(slash)) {
 						SET_ERRSTR("%s: couldn't parse field", field);
 						free(base);
 						return(FALSE);
@@ -138,39 +139,30 @@ static int parse_field(char *field, SV *value, void *myinfo,
 						free(base);
 						return(FALSE);
 					}
-					info->code[1] = code;
+					info->code[0] = code;
+					if(!sep)
+						info->code[1] = info->code[0];
 				}
-				code = strtoul(slash, &extent, 10);
-				if(extent - slash < strlen(slash)) {
+				type = strtoul(typename, &extent, 10);
+				if(extent - typename < strlen(typename)) {
 					SET_ERRSTR("%s: couldn't parse field", field);
 					free(base);
 					return(FALSE);
 				}
-				if(code < 0 || code > UCHAR_MAX) {
-					SET_ERRSTR("%s: code out of range", field);
-					free(base);
+				free(base);
+				if(type < 0 || type > UCHAR_MAX) {
+					SET_ERRSTR("%s: type value out of range", field);
 					return(FALSE);
 				}
-				info->code[0] = code;
-				if(!sep)
-					info->code[1] = info->code[0];
+				info->type = type;
 			}
-			type = strtoul(typename, &extent, 10);
-			if(extent - typename < strlen(typename)) {
-				SET_ERRSTR("%s: couldn't parse field", field);
-				free(base);
-				return(FALSE);
-			}
-			free(base);
-			if(type < 0 || type > UCHAR_MAX) {
-				SET_ERRSTR("%s: type value out of range", field);
-				return(FALSE);
-			}
-			info->type = type;
-			*nfcache |= NFC_IP_SRC_PT | NFC_IP_DST_PT;
 		}
 		else
 			return(FALSE);
+
+		*nfcache |= NFC_IP_SRC_PT;
+		if (info->code[0] != 0 || info->code[1] != 0xFF)
+			*nfcache |= NFC_IP_DST_PT;
 
 		return(TRUE);
 	}
@@ -182,7 +174,7 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	icmpTypeInfo *selector = NULL;
 	char *typename = NULL, *temp;
-	int i;
+	unsigned int i;
 
 	for(i = 0; i < sizeof(icmp_types) / sizeof(icmpTypeInfo); i++) {
 		if(icmp_types[i].type == info->type &&
@@ -217,15 +209,13 @@ static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 }
 
 static ModuleDef _module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	NULL /* final_check */
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
 };
 
 ModuleDef *init(void) {

@@ -1,23 +1,13 @@
+#define BUILD_MATCH
+#define MODULE_DATATYPE struct ipt_dscp_info
+#define MODULE_NAME "dscp"
+
 #define __USE_GNU
 #include "../module_iface.h"
 #include <string.h>
 #include <stdio.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_dscp.h>
-
-#define MODULE_TYPE MODULE_MATCH
-#define MODULE_DATATYPE struct ipt_dscp_info
-#define MODULE_NAME "dscp"
-
-#if MODULE_TYPE == MODULE_TARGET
-#  define MODULE_ENTRYTYPE struct ipt_entry_match
-#else 
-#  if MODULE_TYPE == MODULE_MATCH
-#    define MODULE_ENTRYTYPE struct ipt_entry_target
-#  else
-#    error MODULE_TYPE is unknown!
-#  endif
-#endif
 
 static struct dsClass
 {
@@ -46,7 +36,8 @@ static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
 	char *dscpstr, *extent;
-	int dscpval, i;
+	int dscpval;
+	unsigned int i;
 	struct dsClass *selector = NULL;
 
 	if(!strcmp(field, "dscp")) {
@@ -123,6 +114,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 	if(*flags) {
 		SET_ERRSTR("%s: Only one of 'dscp', 'dscp-class' allowed for dscp "
 						"match", field);
+		return(FALSE);
 	}
 
 	info->dscp = dscpval;
@@ -134,7 +126,7 @@ static int parse_field(char *field, SV *value, void *myinfo,
 static void get_fields(HV *ent_hash, void *myinfo, struct ipt_entry *entry) {
 	MODULE_DATATYPE *info = (void *)((MODULE_ENTRYTYPE *)myinfo)->data;
 	char *dscpstr = NULL, *keystr;
-	int i;
+	unsigned int i;
 	SV *sv;
 
 	for(i = 0; i < (sizeof(dscpClasses) / sizeof(struct dsClass)); i++) {
@@ -177,20 +169,19 @@ int final_check(void *myinfo, int flags) {
 	return(TRUE);
 }
 
-static ModuleDef DSCP_module = {
-	NULL, /* always NULL */
-	MODULE_TYPE,
-	MODULE_NAME,
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	IPT_ALIGN(sizeof(MODULE_DATATYPE)),
-	setup,
-	parse_field,
-	get_fields,
-	final_check
+static ModuleDef _module = {
+	.type			= MODULE_TYPE,
+	.name			= MODULE_NAME,
+	.size			= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.size_uspace	= IPT_ALIGN(sizeof(MODULE_DATATYPE)),
+	.setup			= setup,
+	.parse_field	= parse_field,
+	.get_fields		= get_fields,
+	.final_check	= final_check,
 };
 
 ModuleDef *init(void) {
-	return(&DSCP_module);
+	return(&_module);
 }
 /* vim: ts=4
  */
