@@ -23,7 +23,7 @@ require AutoLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.97a';
+$VERSION = '0.97b';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()

@@ -10,12 +10,12 @@ my $moduledir = $Config{siteprefixexp} . "/lib/IPTables-IPv4";
 
 	sub test_via_harness {
 		my($self, $perl, $tests) = @_;
-		return $self->SUPER::test_via_harness("IPT_IPV4_MODPATH=" . $ENV{PWD} . "/modules $perl", $tests);
+		return $self->SUPER::test_via_harness("IPT_IPV4_MODPATH=\$(CURDIR)/modules $perl", $tests);
 	}
 
 	sub test_via_script {
 		my($self, $perl, $tests) = @_;
-		return $self->SUPER::test_via_script("IPT_IPV4_MODPATH=" . $ENV{PWD} . "/modules $perl", $tests);
+		return $self->SUPER::test_via_script("IPT_IPV4_MODPATH=\$(CURDIR)/modules $perl", $tests);
 	}
 
 	sub postamble {
