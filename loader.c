@@ -31,6 +31,9 @@
 #include <dlfcn.h>
 #include <stdio.h>
 
+/* for getenv() */
+#include <stdlib.h>
+
 #include "libiptc/libiptc.h"
 #include "loader.h"
 
@@ -80,8 +83,11 @@ static ModuleDef *find_module_int(char *name, ModuleType type,
 	 * dynamically load a module (normally only for this routine to call
 	 * itself */
 	if(!dont_load) {
-		char *path;
-		asprintf(&path, MODULE_PATH "/ipt_pl_%s.so", name);
+		char *path, *basepath = NULL;
+		basepath = getenv("IPT_IPV4_MODPATH");
+		if (!basepath || !strcmp(basepath, ""))
+			basepath = MODULE_PATH;
+		asprintf(&path, "%s/ipt_pl_%s.so", basepath, name);
 		if((libhandle = dlopen(path, RTLD_NOW))) {
 			initf = dlsym(libhandle, "init");
 			register_module(initf(), table);

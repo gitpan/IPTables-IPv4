@@ -156,7 +156,7 @@ static bool assemble_mask_from_arrayref(SV *arrayref, FlagList *flags,
 static int parse_field(char *field, SV *value, void *myinfo,
 		unsigned int *nfcache, struct ipt_entry *entry, int *flags) {
 	MODULE_DATATYPE *info = (void *)(*(MODULE_ENTRYTYPE **)myinfo)->data;
-	char *temp, *text;
+	char *temp, *text, *base;
 	SV **svp;
 	int val, inv;
 	STRLEN len;
@@ -219,20 +219,21 @@ static int parse_field(char *field, SV *value, void *myinfo,
 			val = SvIV(value);
 		else if(SvPOK(value)) {
 			temp = SvPV(value, len);
-			text = malloc(len + 1);
+			base = text = malloc(len + 1);
 			strncpy(text, temp, len);
 			text[len] = '\0';
 			if(*text == INVCHAR) {
 				info->invflags |= IPT_TCP_INV_OPTION;
 				text++;
 			}
+			temp = NULL;
 			val = strtoul(text, &temp, 10);
 			if((temp - text) < strlen(text)) {
 				SET_ERRSTR("%s: Unable to parse option number", field);
-				free(text);
+				free(base);
 				return(FALSE);
 			}
-			free(text);
+			free(base);
 		}
 		else {
 			SET_ERRSTR("%s: Must be passed as integer or string", field);

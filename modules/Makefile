@@ -12,7 +12,9 @@ INSTALL_BASE := $(shell perl -e 'use Config; print $$Config{siteprefixexp}, "\n"
 KERNEL_INC := $(KERNEL_BASE)/include
 NF_INC := $(NF_BASE)/include
 PERL_INC := $(PERL_BASE)/CORE
+ifndef INSTALL_DIR
 INSTALL_DIR := $(INSTALL_BASE)/lib/IPTables-IPv4
+endif
 
 CFLAGS := -I$(KERNEL_INC) -I$(NF_INC) -I$(PERL_INC) -I.. -Wall
 

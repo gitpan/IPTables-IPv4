@@ -24,6 +24,16 @@
 	+ ROUTE
 	+ SAME
 
-- Port netfilter testsuite to this framework (probably after some more of
-  the modules are ported). Some of it may not be portable, because of the
-  way the testing is being done. I'll have to investigate further.
+- Port more of the netfilter testsuite test cases to IPTables::IPv4. The
+  following should be ported ASAP, as they don't require any special stuff:
+
+	21loop.sh
+	56speed.sh
+	57badtargmatch.sh
+	58ipchainscrash.sh
+	59numberproto.sh
+	60bignum.sh
+
+  Others can be ported later, once I figure out how to reproduce some of the
+  other stuff, like the stuff for using /dev/tap* for simulating real network
+  activity for rule testing.

@@ -23,7 +23,7 @@ require AutoLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.96';
+$VERSION = '0.97';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -97,6 +97,13 @@ Wrappers have been implemented for all methods except one
 the unimplemented call will likely remain so. Protocol-specific match
 modules have been implemented for TCP, UDP and ICMP. Several target and
 non-protocol match modules have been implemented.
+
+The module will be built with a default library path built into it. That
+can be overridden using the IPT_IPV4_MODPATH environment variable. If your
+script is being called suid root, you may want to do
+C<delete $ENV{IPT_IPV4_MODPATH};> to ensure that someone isn't subverting
+your script. Make sure you do this before you C<use IPTables::IPv4;> to
+ensure that it never loads from an unapproved path.
 
 =head1 METHODS
 
@@ -433,12 +440,35 @@ prefixed with a '!' to indicate inverse sense.
 
 =back
 
+=head2 iplimit match options
+
+This match allows a rule to match on the number of simultaneous TCP
+connections from individual hosts, or groups of hosts. The C<iplimit-above>
+field is required for this match.
+
+=over
+
+=item iplimit-above
+
+Specify the minimum number of TCP connections which will activate this match.
+This must be a positive integer value. It can be passed as an integer or
+string. The value can be prefixed with a '!' to indicate inverse sense (i.e.
+match on no more than the specified number).
+
+=item iplimit-mask
+
+Specify a mask width to group the matches by. This can be used to group
+connections by subnet. This can only be an integer, from 0 to 32, inclusive.
+The default is 32, which will count by individual IPs.
+
+=back
+
 =head2 ipv4options match options
 
 This match module allows a rule to match a packet based on certain IPv4 header
 flags. Only one of the source-routing flags may be set on any one rule, and
-the any-opt flag will conflict with any of the other flags if they are set in
-an opposing fashion.
+the C<any-opt> flag will conflict with any of the other flags if they are set
+in an opposing fashion.
 
 =over
 

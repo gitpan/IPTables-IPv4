@@ -1,35 +1,105 @@
+Introduction:
+
+IPTables::IPv4 is a Perl module, written in C using the XS toolset, and
+built on top of libiptc from netfilter/iptables. It provides an interface
+over libiptc, with match and target module handling, to allow Perl scripts
+to manipulate kernel firewalling, NAT/masquerade, and packet mangling rules.
+
+This particular module has certain advantages over other similar modules:
+
+  - Instead of constructing command lines and feeding them to the command
+    line 'iptables' tool, the actual libiptc routines are used to
+    manipulate rules. Not only is this faster because of the removal of
+    fork()/exec() overhead, but there's an additional speed boost because
+    the script only needs to get the state of a table once. Changes are
+    then applied to it in local memory, then committed back to the kernel.
+
+  - Instead of trying to adapt the iptables utility's code wholesale to
+    Perl, which is awkward at best, I've built up code on top of libiptc
+    that is expressly designed for use with Perl. Therefore, at least in
+    this programmer's opinion, it integrates far better with Perl scripts,
+    allowing rule analysis and manipulation in ways nothing else can.
+
+  - Instead of representing the individual rules (or entries, as libiptc
+    calls them) as some sort of object, which makes them hard to properly
+    serialize and reconstitute, rules are represented simply as hashes.
+
+  - This module also provides a tie()'d data structure, %IPTables::IPv4,
+    through which rule manipulation can be done. The level of integration
+    with Perl makes this feasible with no extra XS code - the tie() classes
+    themselves are pure Perl.
+
+  - This code includes a snap of libiptc, with a few minor changes to
+    correct error string problems I discovered. That means that this
+    package is 100% self-contained - it does not require any acrobatics
+    with installing libiptc.a and the libiptc/iptables headers in unusual
+    locations to build.
+
+Please see the embedded POD documentation (perldoc IPTables::IPv4), or the
+included PDF, for full details on using the IPTables::IPv4 module.
+
 Quick how-to on building IPTables:
 
-tar zxf IPTables.tar.gz -C <target dir>
-cd <target dir>/IPTables
+tar zxf IPTables-IPv4-<version>.tar.gz -C <target dir>
+cd <target dir>/IPTables-IPv4-<version>
 perl Makefile.PL
 make
-make install # from here on must be as root!
-make test
+make test # from here on must be as root! this will fail if not!
+make install
 
+Note about "make test":
+
+Doing "make test" will save your current ruleset, clear all rules, and
+restore the saved rules when the test sequence finishes. If it starts 'make
+test' and doesn't complete, or you have to break out of it for some reason,
+do the following:
+
+   IPT_IPV4_MODPATH=${PWD}/modules perl -Iblib/lib -Iblib/arch \
+        t/99restore_ruleset.t
+
+at a prompt, from within the IPTables-IPv4-<version> directory. This will
+restore the ruleset that the first test script saved (in /tmp/ruleset.txt).
+
+Modules:
+
+Presently, match and target modules are provided for everything that is
+in the stock 2.4.20 kernel. Some of the matches and targets in
+patch-o-matic are also supported, but not all. If you want more supported,
+look at the modules sources in the modules/ subdirectory and use them as
+a model for constructing your own module. If you can write a test case
+as well, that would also be helpful - it will allow its behavior to be
+verified at build time.
+
+Patches/Submissions:
+
+Submissions of bug fixes, new modules, etc., will be gladly accepted into
+the CVS tree. Unified diffs ('diff -u' style) are preferred, as they are
+the most human-readable form. I will continue to develop and improve
+IPTables::IPv4, but I can't guarantee that I will support every match and
+target module in as timely a fashion as you may need. If it's not something
+I use, I may not be familiar enough with it to port it, or give it the
+testing and attention it deserves, so submissions of new modules are
+particularly welcome.
+
+Mailing list:
+
+I've set up a mailing list for discussion, bug reporting, etc. about the
+IPTables::IPv4 module. If you wish to subscribe, go to:
+
+    http://lists.sourceforge.net/lists/listinfo/iptperl-general
+
+and subscribe. Non-member posting has been disabled for the list, so you
+must subscribe to post to the list.
+
+Reporting bugs:
 
 This code has been used in production scenarios, and has had some beating
-done on it. Please read the embedded POD documentation (perldoc
-IPTables::IPv4) or the included PDF for information on using this module.
-There may be lingering bugs yet, but I have attempted to eliminate as many
-as possible. Please drop me an e-mail if you find one, however. If you do
-find a bug, and do let me know, please provide as much detail as possible -
-script examples, strace output, and other such material can ease the process
-of determining what went wrong.
+done on it. However, bugs may remain, but I have tried to eliminate all I
+can. If you come across a bug, please e-mail me about it. The more detail
+you can provide, the better - script examples and strace/ltrace output,
+GDB backtraces, and other such debugging material can be invaluable in
+tracking down what happened, and why.
 
-I am now including a snap of the libiptc code from the netfilter source tree.
-This heavily simplifies the build procedure, eliminating the need to get
-an iptables source tree or a netfilter CVS tree to build against.
-
-I have written match and target modules for all the matches and targets
-which are provided with a stock kernel, as well as some which are, as yet,
-only available via patch-o-matic. If you wish to have more supported, I
-encourage you (following the model put forth in the existing modules) to
-add the necessary support. The modules that are in there are ones that I
-care about supporting, because they're ones that I've needed. I'll try to
-get more in, but without the need for them, it's hard to justify the coding
-time, not to mention not really having the ability to give them the serious
-testing they need.
-
+--
 Derrik Pates
 dpates@dsdk12.net

@@ -1,6 +1,7 @@
 COPYING
 Changes
 IPTables.typemap
+IPTables::IPv4.pdf
 IPv4/Chain.pm
 IPv4/Rule.pm
 IPv4/RuleList.pm
@@ -81,6 +82,16 @@ modules/ipt_pl_udp.c
 modules/ipt_pl_unclean.c
 packer.c
 packer.h
-test.pl
+t/00save_current_ruleset.t
+t/01simple_manip.t
+t/03admin.t
+t/04append.t
+t/05insert.t
+t/07flush.t
+t/08replace.t
+t/14badtarget.t
+t/18rename.t
+t/19listports.t
+t/99restore_ruleset.t
 unpacker.c
 unpacker.h
